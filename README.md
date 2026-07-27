@@ -19,9 +19,9 @@ Symptom checkers usually work as flat keyword lookups. This project instead mode
 
 ## Planned approach
 
-1. **Build the graph** — parse both CSVs into a unified graph structure (e.g. `Disease -[HAS_SYMPTOM]-> Symptom`), deduplicating symptom names/synonyms across the two data sources.
-2. **Store the graph** — load into a graph database or in-memory graph library (e.g. Neo4j, NetworkX) for querying.
-3. **Retrieval** — given a set of input symptoms, traverse the graph to find candidate diseases ranked by symptom overlap/strength of connection.
+1. **Build the graph** — 
+2. **Store the graph** — load into a graph database or in-memory graph library (e.g. NetworkX) for querying.
+3. **Retrieval** — given a set of input symptoms, use the graph to find candidate diseases ranked by symptom overlap/strength of connection.
 4. **Generation** — use an LLM (GraphRAG-style) to turn the retrieved subgraph into a human-readable explanation of *why* each diagnosis was suggested.
 5. **Interface** — expose this as a simple script/notebook or small app where a user can input symptoms and get back ranked possibilities with explanations.
 
