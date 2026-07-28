@@ -1,1 +1,8 @@
-print('symptoms and diagnosis')
+import pandas as pd    # lets us load CSV files and work with them as tables
+import numpy as np      # a maths library that pandas uses in the background
+import networkx as nx   # will let us build the symptom/disease graph later on
+
+df1 = pd.read_csv("DiseaseAndSymptoms.csv")            # load the first CSV, where each disease already has its own symptom columns
+df2 = pd.read_csv("final_symptoms_to_disease.csv")      # load the second CSV, where each disease just has one long sentence of symptoms
+
+

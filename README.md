@@ -12,33 +12,17 @@ Symptom checkers usually work as flat keyword lookups. This project instead mode
 
 ## Data
 
-| File | Description |
-|---|---|
-| `DiseaseAndSymptoms.csv` | Diseases mapped to up to 17 discrete symptom columns per row. |
-| `final_symptoms_to_disease.csv` | Diseases mapped to free-text symptom descriptions (`symptom_text`), useful for embedding/NLP-based graph construction. |
+
 
 ## Planned approach
 
-1. **Build the graph** — 
-2. **Store the graph** — load into a graph database or in-memory graph library (e.g. NetworkX) for querying.
-3. **Retrieval** — given a set of input symptoms, use the graph to find candidate diseases ranked by symptom overlap/strength of connection.
-4. **Generation** — use an LLM (GraphRAG-style) to turn the retrieved subgraph into a human-readable explanation of *why* each diagnosis was suggested.
-5. **Interface** — expose this as a simple script/notebook or small app where a user can input symptoms and get back ranked possibilities with explanations.
+
 
 ## Project structure
 
-```
-.
-├── DiseaseAndSymptoms.csv          # structured symptom data
-├── final_symptoms_to_disease.csv   # free-text symptom data
-├── The_code                        # main working script (in progress)
-└── README.md
-```
 
 ## Status
 
-Early stage — data collected, graph construction and retrieval logic not yet implemented.
 
-## Disclaimer
 
-This project is for educational/portfolio purposes only. It is **not a medical device** and should never be used as a substitute for professional medical advice, diagnosis, or treatment.
+
