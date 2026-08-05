@@ -1,5 +1,9 @@
 #things from the notebook. removing prints and unnessary things 
 
+#BUGGS
+    #ASKS THE SAME QUESTION - think sorted 
+    #weakness_of_one_body_side? - the underscores i need to sort that 
+
 import csv
 import math
 import re
@@ -192,7 +196,8 @@ SYNONYMS = {
     "runny nose": "runny_nose", "blocked nose": "congestion",
     "sore throat": "throat_irritation", "yellow eyes": "yellowing_of_eyes",
     "belly ache": "abdominal_pain", "tummy pain": "abdominal_pain",
-    "stomach ache": "stomach_pain", "the runs": "diarrhoea",
+    "stomach ache": "stomach_pain", "upset stomach": "stomach_pain",
+    "the runs": "diarrhoea",
     "loose stools": "diarrhoea", "cant poo": "constipation",
     "itchy": "itching", "rash": "skin_rash", "dizzy": "dizziness",
     "sweaty": "sweating", "night sweats": "sweating", "shaky": "shivering",
@@ -205,6 +210,16 @@ SYNONYMS = {
     "urination": "micturition",
 }
 _SYN_KEYS = sorted(SYNONYMS, key=len, reverse=True)
+
+# fuzzy-match pool: both the graph's own symptom names and the plain-English
+# synonym phrases, so a typo'd synonym (e.g. "throwinfg up") still resolves
+_ALL_PHRASES = dict(_READABLE)
+for _syn, _node in SYNONYMS.items():
+    _ALL_PHRASES.setdefault(_syn, _node)
+
+# same pool again with spaces stripped, to catch word-split mismatches
+# (e.g. "head ache" vs the graph's "headache") that token-based matching misses
+_NOSPACE_PHRASES = {phrase.replace(" ", ""): node for phrase, node in _ALL_PHRASES.items()}
 
 
 def canonicalise(raw_symptoms):
@@ -225,9 +240,16 @@ def canonicalise(raw_symptoms):
             matched.extend(SYNONYMS[k] for k in buried[:1])
             continue
 
-        hit = process.extractOne(needle, list(_READABLE), scorer=fuzz.token_set_ratio, score_cutoff=75)
+        hit = process.extractOne(needle, list(_ALL_PHRASES), scorer=fuzz.token_set_ratio, score_cutoff=75)
         if hit:
-            matched.append(_READABLE[hit[0]])
+            matched.append(_ALL_PHRASES[hit[0]])
+            continue
+
+        nospace_hit = process.extractOne(
+            needle.replace(" ", ""), list(_NOSPACE_PHRASES), scorer=fuzz.ratio, score_cutoff=75
+        )
+        if nospace_hit:
+            matched.append(_NOSPACE_PHRASES[nospace_hit[0]])
         else:
             unknown.append(str(phrase))
     return sorted(set(matched)), unknown
@@ -249,7 +271,7 @@ def score_diseases(symptoms, top_n=5):
     return results[:top_n]
 
 
-def discriminators(candidates, asked_about, k=3):
+def discriminators(candidates, asked_about, k=5):
     """Symptoms that best split the top candidates."""
     names = [c[1] for c in candidates]
     if len(names) < 2:
@@ -270,10 +292,12 @@ def discriminators(candidates, asked_about, k=3):
     return scored[:k]
 
 
-def diagnose_text(raw_symptoms, top_n=5):
+def diagnose_text(raw_symptoms, top_n=5, ruled_out=None):
     symptoms, unknown = canonicalise(raw_symptoms)
     if not symptoms:
         return f"No known symptoms matched {raw_symptoms}. Ask the user to rephrase."
+
+    ruled_out_symptoms, _ = canonicalise(ruled_out or [])
 
     candidates = score_diseases(symptoms, top_n)
 
@@ -281,13 +305,14 @@ def diagnose_text(raw_symptoms, top_n=5):
     if unknown:
         lines.append(f"Not in the graph (ignored): {', '.join(unknown)}")
     lines.append("")
+
     lines.append("Ranked candidates:")
     for score, disease, hit, missing in candidates:
         lines.append(f"- {disease} (score {score:.3f}) matched {len(hit)}: {', '.join(hit)}")
         if missing:
             lines.append(f"    also usually presents: {', '.join(missing[:4])}")
 
-    splits = discriminators(candidates, symptoms)
+    splits = discriminators(candidates, symptoms + ruled_out_symptoms)
     if splits:
         lines.append("")
         lines.append("Best follow-up questions (these split the candidates):")
@@ -341,7 +366,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 @tool
 def use_disease_scorer(symptoms: list[str]) -> str:
     """Score diseases by weighted symptom match - rarer, more specific symptoms
-    count for more, and matching several symptoms at once gets a boost.
+    count for more, and matching several symptoms at once gets a boost. 
     Pass symptoms as they appear in the graph, e.g. ["itching", "skin rash"].
     Returns candidate diseases ranked highest-scoring first.
     """
@@ -352,14 +377,17 @@ def use_disease_scorer(symptoms: list[str]) -> str:
 
 
 @tool
-def diagnose(symptoms: list[str]) -> str:
-    """Look up probable diseases for a list of patient symptoms.
-    Pass symptoms as short plain-English phrases, e.g. ["headache", "throwing up"].
-    They are matched onto the knowledge graph automatically.
-    Returns candidate diseases ranked by weighted symptom overlap, plus the best
-    follow-up questions to ask.
+def diagnose(symptoms: list[str], ruled_out: list[str] = None) -> str:
+    """Diagnose probable diseases from a list of patient symptoms.
+
+    Pass symptoms as short plain-English phrases, e.g. ["headache", "throwing up"] -
+    they are matched onto the knowledge graph automatically. Pass ruled_out the same way for symptoms the patient said they DON'T have,
+    so they aren't suggested again as a follow-up question.
+
+    Returns candidate diseases ranked by score, plus the best follow-up
+    questions to ask to narrow down or confirm the diagnosis.
     """
-    return diagnose_text(symptoms)
+    return diagnose_text(symptoms, ruled_out=ruled_out)
 
 
 llm = ChatOpenAI(
@@ -378,8 +406,30 @@ Rules:
   full list to the tool.
 - Constrain to reasoning from the graph
 - Report the candidates in the tool's order, with their scores.
+- The tool's "Matched symptoms" line is the only symptoms the patient actually
+  has. Never say the patient has, reports, or has a history of any other symptom.
+- The tool's "also usually presents" symptoms are unconfirmed - they are typical
+  of that disease, not something the patient told you. Never state them as fact
+  or as patient history. Only ever raise them as a question ("do you also have X?").
 - The tool supplies follow-up questions. Ask those. Do not invent your own.
+- Never settle on a single diagnosis. Always present the tool's full shortlist
+  of candidates (up to 5), each with its score, then ask the follow-up
+  questions to narrow the list down.
+- Ask only one follow-up question per turn, not the whole list at once. After
+  the patient answers, resend the full symptom list (including their answer)
+  to the tool and repeat: present the updated shortlist, ask the next
+  follow-up question. Keep doing this across multiple turns until either
+  only one candidate is left, or the tool has no more follow-up questions to
+  offer - only then treat the diagnosis as confirmed.
+- When asking a follow-up question, phrase it naturally, e.g. "Do you also
+  have <symptom>?" - don't just output the bare symptom name with a question mark.
+- If the patient answers "no" to a follow-up question, add that symptom to
+  `ruled_out` on every future call to `diagnose`, so it isn't asked again.
+
+
 """
+#confidence tool? - take in your system and then see how many times it comes up in the other systems -n 
+    #way to do it from numbers?
 
 agent = create_agent(
     model=llm,
@@ -416,6 +466,13 @@ def chat(message, thread_id="patient-1", strict=True):
         reply = (
             "[the model answered without calling the tool - "
             "showing the graph's answer instead]\n\n" + grounded_answer(message)
+        )
+    elif "No known symptoms matched" in tool_output or "No diseases matched" in tool_output:
+        # the graph found nothing to work with - any diagnosis in the reply is a
+        # guess from the model's own knowledge, not the graph, no matter how it's phrased
+        reply = (
+            "[the graph found no matching symptoms - refusing to guess a "
+            "diagnosis]\n\n" + tool_output
         )
     else:
         strays = ungrounded(reply, tool_output)
