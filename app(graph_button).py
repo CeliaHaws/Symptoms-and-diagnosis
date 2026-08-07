@@ -49,14 +49,23 @@ class ChatApp: #bundles all the sections together into a class so that it can be
             # the button that sends the message when clicked
 
         self.visualiser = DiagnosisVisuliser(diagnosis_engine) #tracks which symptoms have been said and colours the graph accordingly
+        self.message_count = 0 #counts how many messages the user has sent, so the graph button unlocks after the 2nd
+
+        graph_controls = tk.Frame(graph_frame)
+        graph_controls.pack(fill="x", padx=8, pady=(8, 0))
+        self.generate_graph_button = tk.Button(
+            graph_controls, text="Generate Graph", command=self.generate_graph, state="disabled"
+        )
+        self.generate_graph_button.pack(side="left")
+        # the graph is only drawn when this button is pressed, not on every message -
+        # redrawing the layout is slow, so we don't want it happening on every send
+
         self.figure = Figure(figsize=(6, 6), dpi=150)
         self.ax = self.figure.add_subplot(111)
         self.canvas = FigureCanvasTkAgg(self.figure, master=graph_frame)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
         self.visualiser.redraw(ax=self.ax) #draw the graph once at startup, before anything's been said
         self.canvas.draw()
-
-
 
         self.append_transcript(
             "System",
@@ -78,8 +87,11 @@ class ChatApp: #bundles all the sections together into a class so that it can be
         self.entry.delete(0, tk.END) # reading the input
         self.append_transcript("You", message) # putting your messsage into the transcript box
 
-        self.visualiser.add_input(message, ax=self.ax) #update the graph immediately with the newly reported symptoms
-        self.canvas.draw()
+        self.visualiser.record_input(message) #record the newly reported symptoms, but don't redraw yet
+
+        self.message_count += 1
+        if self.message_count >= 2:
+            self.generate_graph_button.config(state="normal") #unlock the graph button after the 2nd prompt
 
         self.send_button.config(state="disabled") # when the clicked cant click again until the reply is received
         self.transcript.configure(state="normal")
@@ -89,6 +101,10 @@ class ChatApp: #bundles all the sections together into a class so that it can be
         self.transcript.see(tk.END)
 
         threading.Thread(target=self.get_reply, args=(message,), daemon=True).start() #asking the agent the information in the background separetly so that the front end doesnt freeze
+
+    def generate_graph(self): # redraws the graph on demand, instead of on every message
+        self.visualiser.redraw(ax=self.ax)
+        self.canvas.draw()
 
     def get_reply(self, message): #asking the AI the chat input
         # Runs on a background thread so the agent's (possibly slow) call to
@@ -117,5 +133,3 @@ if __name__ == "__main__": #keeping the window open
     root = tk.Tk()
     app = ChatApp(root)
     root.mainloop()
-
-    #have a button 'generate graph' to generate the graph after the second prompt
