@@ -1,5 +1,8 @@
 # Tkinter chat from end for the diseasae-symptom agent in diagnosis.py
 
+import sys
+sys.dont_write_bytecode = True #stop __pycache__ from being generated when this runs
+
 import queue
 import threading #queue and threading allow something slow to run in backend without freezing front end
 from matplotlib.lines import Line2D #fr building the
@@ -52,7 +55,7 @@ class ChatApp: #bundles all the sections together into a class so that it can be
         self.message_count = 0 #counts how many messages the user has sent, so the graph button unlocks after the 2nd
 
         graph_controls = tk.Frame(graph_frame)
-        graph_controls.pack(fill="x", padx=8, pady=(8, 0))
+        graph_controls.pack(fill="x", padx=8, pady=(6, 6))
         self.generate_graph_button = tk.Button(
             graph_controls, text="Generate Graph", command=self.generate_graph, state="disabled"
         )
@@ -87,7 +90,9 @@ class ChatApp: #bundles all the sections together into a class so that it can be
         self.entry.delete(0, tk.END) # reading the input
         self.append_transcript("You", message) # putting your messsage into the transcript box
 
-        self.visualiser.record_input(message) #record the newly reported symptoms, but don't redraw yet
+        threading.Thread(target=self.visualiser.record_input, args=(message,), daemon=True).start()
+        #records the newly reported symptoms on its own thread, completely separate from the chat -
+        #the canonicaliser/graph work never blocks sending a message or starting the LLM reply
 
         self.message_count += 1
         if self.message_count >= 2:
